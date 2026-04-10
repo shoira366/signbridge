@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  fullName     String
+  email        String         @unique
+  passwordHash String
+  role         String         @default("user")
+  createdAt    DateTime       @default(now())
+  progress     UserProgress[]
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id          Int      @id @default(autoincrement())
+  categoryId  Int
+  title       String
+  description String?
+  difficulty  String   @default("beginner")
+  videoUrl    String?
+  createdAt   DateTime @default(now())
+
+  category Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  signs    Sign[]
+  quizzes  Quiz[]
+  progress UserProgress[]
+}
+
+model Sign {
+  id          Int      @id @default(autoincrement())
+  lessonId    Int
+  word        String
+  meaningUz   String
+  description String?
+  imageUrl    String? // 🔥 NEW
+  order       Int?
+  videoUrl    String? // optional
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  lesson        Lesson         @relation(fields: [lessonId], references: [id])
+  quizQuestions QuizQuestion[]
+
+  @@unique([lessonId, word])
+}
+
+model Quiz {
+  id        Int      @id @default(autoincrement())
+  lessonId  Int
+  title     String
+  createdAt DateTime @default(now())
+
+  lesson    Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  questions QuizQuestion[]
+}
+
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  quizId        Int
+  type          String
+  prompt        String
+  signId        Int?
+  correctAnswer String?
+  optionsJson   Json?
+  createdAt     DateTime @default(now())
+
+  quiz Quiz  @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  sign Sign? @relation(fields: [signId], references: [id], onDelete: SetNull)
+}
+
+model UserProgress {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  lessonId  Int
+  completed Boolean  @default(false)
+  score     Int      @default(0)
+  updatedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
