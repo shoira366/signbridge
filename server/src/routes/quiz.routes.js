@@ -1,48 +1,26 @@
-// const express = require("express");
-// const router = express.Router();
-// const prisma = require("../config/prisma.config");
-// const { authenticateUser, authorizeAdmin } = require("../middlewares/auth.middleware");
-
-// router.post("/", authenticateUser, authorizeAdmin, async (req, res) => {
-//   const data = req.body;
-
-//   const quiz = await prisma.quiz.create({
-//     data,
-//   });
-
-//   res.json(quiz);
-// });
-
-// router.delete("/:id", authenticateUser, authorizeAdmin, async (req, res) => {
-//   await prisma.quiz.delete({
-//     where: { id: Number(req.params.id) },
-//   });
-
-//   res.json({ message: "Deleted" });
-// });
-
-// module.exports = router;
-
 const express = require("express");
 const router = express.Router();
+const quizController = require("../controllers/quiz.controller");
+const { authenticateUser, authorizeAdmin } = require("../middlewares/auth.middleware");
 
-const {
-  createQuiz,
-  getQuizzesByLesson,
-  getQuizById,
-  deleteQuiz,
-  createQuizQuestion,
-  getQuizQuestions,
-  deleteQuizQuestion,
-} = require("../controllers/quiz.controller");
+// ==================== USER ROUTES (authenticated users) ====================
 
-router.post("/lessons/:lessonId/", createQuiz);
-router.get("/lessons/:lessonId/", getQuizzesByLesson);
-router.get("/:quizId", getQuizById);
-router.delete("/:quizId", deleteQuiz);
+router.get("/", authenticateUser, quizController.getAllQuizzes);
+router.get("/lessons/:lessonId", authenticateUser, quizController.getQuizzesByLesson);
+router.get("/:quizId/questions", authenticateUser, quizController.getQuizQuestions);
+router.post("/:quizId/submit", authenticateUser, quizController.submitQuiz);
+router.get("/:quizId", authenticateUser, quizController.getQuizById);
 
-router.post("/:quizId/questions", createQuizQuestion);
-router.get("/:quizId/questions", getQuizQuestions);
-router.delete("/questions/:id", deleteQuizQuestion);
+// ==================== ADMIN ROUTES (admin only) ====================
+
+router.get("/all", authenticateUser, authorizeAdmin, quizController.adminGetAllQuizzes);
+router.get("/lessons/:lessonId", authenticateUser, authorizeAdmin, quizController.adminGetQuizzesByLesson);
+router.get("/:quizId", authenticateUser, authorizeAdmin, quizController.adminGetQuizById);
+router.post("/lessons/:lessonId", authenticateUser, authorizeAdmin, quizController.adminCreateQuiz);
+router.put("/:quizId", authenticateUser, authorizeAdmin, quizController.adminUpdateQuiz);
+router.delete("/:quizId", authenticateUser, authorizeAdmin, quizController.adminDeleteQuiz);
+router.post("/:quizId/questions", authenticateUser, authorizeAdmin, quizController.adminCreateQuizQuestion);
+router.put("/questions/:questionId", authenticateUser, authorizeAdmin, quizController.adminUpdateQuizQuestion);
+router.delete("/questions/:questionId", authenticateUser, authorizeAdmin, quizController.adminDeleteQuizQuestion);
 
 module.exports = router;

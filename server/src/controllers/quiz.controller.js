@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../config/prisma.config");
 
 const ALLOWED_TYPES = [
   "sign_to_meaning_mcq",
@@ -9,13 +8,383 @@ const ALLOWED_TYPES = [
   "match_pairs",
 ];
 
-const createQuiz = async (req, res) => {
+// ==================== USER PROCESSES ====================
+
+// GET ALL QUIZZES (for users - with progress tracking)
+
+exports.getAllQuizzes = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    
+    const quizzes = await prisma.quiz.findMany({
+      include: {
+        lesson: {
+          include: {
+            category: true,
+            signs: true
+          }
+        },
+        questions: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    
+    if (userId) {
+      const userProgress = await prisma.userProgress.findMany({
+        where: { userId },
+        select: { lessonId: true, completed: true, lastScore: true, bestScore: true }
+      });
+      
+      const progressMap = {};
+      userProgress.forEach(p => {
+        progressMap[p.lessonId] = {
+          completed: p.completed,
+          score: p.lastScore || p.bestScore || 0
+        };
+      });
+      
+      const enhancedQuizzes = quizzes.map(quiz => ({
+        ...quiz,
+        userProgress: progressMap[quiz.lessonId] || null,
+        isCompleted: progressMap[quiz.lessonId]?.completed || false
+      }));
+      
+      return res.json(enhancedQuizzes);
+    }
+    
+    res.json(quizzes);
+  } catch (error) {
+    console.error("Get all quizzes error:", error);
+    res.status(500).json({ error: "Failed to fetch quizzes" });
+  }
+};
+
+// GET QUIZZES BY LESSON (for users - checks lesson completion)
+exports.getQuizzesByLesson = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const lessonId = Number(req.params.lessonId);
+
+    const user = userId ? await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    }) : null;
+    
+    const isAdmin = user?.role === "admin";
+
+    if (!isAdmin && userId) {
+      const progress = await prisma.userProgress.findUnique({
+        where: { userId_lessonId: { userId, lessonId } },
+      });
+
+      if (!progress?.completed) {
+        return res.status(403).json({
+          message: "Complete the lesson first to access quizzes",
+        });
+      }
+    }
+
+    const quizzes = await prisma.quiz.findMany({
+      where: { lessonId },
+      include: {
+        questions: {
+          include: { sign: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    console.log(quizzes)
+
+    res.json(quizzes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch quizzes" });
+  }
+};
+
+// GET QUIZ BY ID (for users)
+exports.getQuizById = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const quizId = Number(req.params.quizId);
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: {
+        lesson: true,
+        questions: {
+          include: { sign: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!quiz) {
+      return res.status(404).json({ message: "Quiz not found" });
+    }
+
+    const progress = await prisma.userProgress.findUnique({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId: quiz.lessonId,
+        },
+      },
+    });
+
+    if (!progress?.completed) {
+      return res.status(403).json({
+        message: "Complete the lesson first",
+      });
+    }
+
+    res.json(quiz);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch quiz" });
+  }
+};
+
+// Get quiz questions - returns ALL questions with isPremium flag
+exports.getQuizQuestions = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const quizId = Number(req.params.quizId);
+    
+    // Get all questions (no filtering)
+    const questions = await prisma.quizQuestion.findMany({
+      where: { quizId },
+      include: {
+        sign: true
+      },
+      orderBy: {
+        order: 'asc'
+      }
+    });
+    
+    // Check if user has premium subscription
+    let isPremium = false;
+    if (userId) {
+      const subscription = await prisma.subscription.findUnique({
+        where: { userId }
+      });
+      isPremium = subscription && subscription.plan !== 'FREE' && subscription.status === 'ACTIVE';
+    }
+    
+    // Count premium questions
+    const premiumCount = questions.filter(q => q.isPremium).length;
+    
+    // Return ALL questions with metadata - frontend will handle locking
+    res.json({
+      questions: questions, // Return ALL questions
+      totalQuestions: questions.length,
+      freeQuestionsCount: questions.length - premiumCount,
+      premiumCount: premiumCount,
+      isPremium: isPremium,
+      hasPremiumQuestions: premiumCount > 0,
+      message: isPremium ? "You have access to all questions" : `${premiumCount} premium questions are locked. Upgrade to unlock them.`
+    });
+    
+  } catch (error) {
+    console.error("Get quiz questions error:", error);
+    res.status(500).json({ error: "Failed to fetch questions" });
+  }
+};
+
+// SUBMIT QUIZ (for users)
+exports.submitQuiz = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const quizId = Number(req.params.quizId);
+    const { answers } = req.body;
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: { questions: true },
+    });
+
+    if (!quiz) {
+      return res.status(404).json({ message: "Quiz not found" });
+    }
+
+    const progress = await prisma.userProgress.findUnique({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId: quiz.lessonId,
+        },
+      },
+    });
+
+    if (!progress?.completed) {
+      return res.status(403).json({
+        message: "Complete the lesson first before submitting quiz",
+      });
+    }
+
+    let correct = 0;
+
+    const prepared = quiz.questions.map((q) => {
+      const userAnswer = answers[q.id];
+      const isCorrect = String(userAnswer).toLowerCase().trim() === String(q.correctAnswer).toLowerCase().trim();
+      if (isCorrect) correct++;
+      return {
+        questionId: q.id,
+        selectedAnswer: userAnswer,
+        isCorrect,
+      };
+    });
+
+    const total = quiz.questions.length;
+    const score = total ? Math.round((correct / total) * 100) : 0;
+    const attempt = (progress?.attempts || 0) + 1;
+    const bestScore = Math.max(score, progress?.bestScore || 0);
+
+    await prisma.userAnswer.createMany({
+      data: prepared.map((a) => ({
+        userId,
+        lessonId: quiz.lessonId,
+        quizId,
+        questionId: a.questionId,
+        selectedAnswer: a.selectedAnswer,
+        isCorrect: a.isCorrect,
+        attempt,
+      })),
+    });
+
+    await prisma.userProgress.upsert({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId: quiz.lessonId,
+        },
+      },
+      update: {
+        lastScore: score,
+        bestScore,
+        attempts: attempt,
+        lastQuizAt: new Date(),
+      },
+      create: {
+        userId,
+        lessonId: quiz.lessonId,
+        lastScore: score,
+        bestScore: score,
+        attempts: 1,
+        lastQuizAt: new Date(),
+      },
+    });
+
+    if (score >= 90) {
+      await prisma.notification.create({
+        data: {
+          userId,
+          title: "🎯 Excellent Quiz Score!",
+          message: `Congratulations! You scored ${score}% on the quiz. Keep up the great work!`,
+          type: "QUIZ_RESULT",
+        },
+      });
+    }
+
+    res.json({
+      message: "Quiz submitted successfully",
+      score,
+      correct,
+      total,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to submit quiz" });
+  }
+};
+
+// ==================== ADMIN PROCESSES ====================
+
+// ADMIN: GET ALL QUIZZES
+exports.adminGetAllQuizzes = async (req, res) => {
+  try {
+    const quizzes = await prisma.quiz.findMany({
+      include: {
+        lesson: {
+          include: {
+            category: true,
+            signs: true
+          }
+        },
+        questions: {
+          include: { sign: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    res.json(quizzes);
+  } catch (error) {
+    console.error("Get all quizzes error:", error);
+    res.status(500).json({ error: "Failed to fetch quizzes" });
+  }
+};
+
+// ADMIN: GET QUIZZES BY LESSON (no completion check)
+exports.adminGetQuizzesByLesson = async (req, res) => {
+  try {
+    const lessonId = Number(req.params.lessonId);
+
+    const quizzes = await prisma.quiz.findMany({
+      where: { lessonId },
+      include: {
+        questions: {
+          include: { sign: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    res.json(quizzes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch quizzes" });
+  }
+};
+
+// ADMIN: GET QUIZ BY ID (no completion check)
+exports.adminGetQuizById = async (req, res) => {
+  try {
+    const quizId = Number(req.params.quizId);
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: {
+        lesson: true,
+        questions: {
+          include: { sign: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!quiz) {
+      return res.status(404).json({ message: "Quiz not found" });
+    }
+
+    res.json(quiz);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch quiz" });
+  }
+};
+
+// ADMIN: CREATE QUIZ
+exports.adminCreateQuiz = async (req, res) => {
   try {
     const lessonId = Number(req.params.lessonId);
     const { title } = req.body;
 
     if (!lessonId || !title?.trim()) {
-      return res.status(400).json({ message: "lessonId and title are required" });
+      return res.status(400).json({ message: "lessonId and title required" });
     }
 
     const lesson = await prisma.lesson.findUnique({
@@ -27,125 +396,64 @@ const createQuiz = async (req, res) => {
     }
 
     const quiz = await prisma.quiz.create({
-      data: {
-        lessonId,
-        title: title.trim(),
-      },
+      data: { lessonId, title: title.trim() },
     });
 
-    return res.status(201).json(quiz);
-  } catch (error) {
-    console.error("Create quiz error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    res.status(201).json(quiz);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to create quiz" });
   }
 };
 
-const getQuizzesByLesson = async (req, res) => {
-  try {
-    const lessonId = Number(req.params.lessonId);
-
-    const quizzes = await prisma.quiz.findMany({
-      where: { lessonId },
-      include: {
-        questions: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-    return res.json(quizzes);
-  } catch (error) {
-    console.error("Get quizzes by lesson error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-const getQuizById = async (req, res) => {
+// ADMIN: UPDATE QUIZ
+exports.adminUpdateQuiz = async (req, res) => {
   try {
     const quizId = Number(req.params.quizId);
+    const { title } = req.body;
 
-    const quiz = await prisma.quiz.findUnique({
+    const quiz = await prisma.quiz.update({
       where: { id: quizId },
-      include: {
-        lesson: true,
-        questions: {
-          include: {
-            sign: true,
-          },
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
-      },
+      data: { title: title.trim() },
     });
 
-    if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
-    }
-
-    return res.json(quiz);
-  } catch (error) {
-    console.error("Get quiz by id error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    res.json(quiz);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update quiz" });
   }
 };
 
-const deleteQuiz = async (req, res) => {
+// ADMIN: DELETE QUIZ
+exports.adminDeleteQuiz = async (req, res) => {
   try {
     const quizId = Number(req.params.quizId);
 
-    await prisma.quiz.delete({
-      where: { id: quizId },
+    await prisma.quizQuestion.deleteMany({
+      where: { quizId },
     });
 
-    return res.json({ message: "Quiz deleted successfully" });
-  } catch (error) {
-    console.error("Delete quiz error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    await prisma.quiz.delete({ where: { id: quizId } });
+
+    res.json({ message: "Quiz deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to delete quiz" });
   }
 };
 
-const createQuizQuestion = async (req, res) => {
+// ADMIN: CREATE QUIZ QUESTION
+exports.adminCreateQuizQuestion = async (req, res) => {
   try {
     const quizId = Number(req.params.quizId);
-    const { type, prompt, signId, correctAnswer, optionsJson } = req.body;
+    const { type, prompt, signId, correctAnswer, optionsJson, points, order, isPremium } = req.body;
 
     if (!quizId || !type || !prompt?.trim()) {
-      return res.status(400).json({
-        message: "quizId, type, and prompt are required",
-      });
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
     if (!ALLOWED_TYPES.includes(type)) {
-      return res.status(400).json({
-        message: "Invalid quiz question type",
-      });
-    }
-
-    const quiz = await prisma.quiz.findUnique({
-      where: { id: quizId },
-      include: {
-        lesson: {
-          include: {
-            signs: true,
-          },
-        },
-      },
-    });
-
-    if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
-    }
-
-    if (signId) {
-      const sign = await prisma.sign.findUnique({
-        where: { id: Number(signId) },
-      });
-
-      if (!sign) {
-        return res.status(404).json({ message: "Sign not found" });
-      }
+      return res.status(400).json({ message: "Invalid question type" });
     }
 
     const question = await prisma.quizQuestion.create({
@@ -154,65 +462,60 @@ const createQuizQuestion = async (req, res) => {
         type,
         prompt: prompt.trim(),
         signId: signId ? Number(signId) : null,
-        correctAnswer: correctAnswer ? String(correctAnswer) : null,
-        optionsJson: optionsJson ?? null,
+        correctAnswer: correctAnswer || null,
+        optionsJson: optionsJson || null,
+        points: points || 1,
+        order: order || 0,
+        isPremium: isPremium || false,
       },
-      include: {
-        sign: true,
-      },
+      include: { sign: true },
     });
 
-    return res.status(201).json(question);
-  } catch (error) {
-    console.error("Create quiz question error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    res.status(201).json(question);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to create question" });
   }
 };
 
-const getQuizQuestions = async (req, res) => {
+// ADMIN: UPDATE QUIZ QUESTION
+exports.adminUpdateQuizQuestion = async (req, res) => {
   try {
-    const quizId = Number(req.params.quizId);
+    const questionId = Number(req.params.questionId);
+    const { type, prompt, signId, correctAnswer, optionsJson, points, order, isPremium } = req.body;
 
-    const questions = await prisma.quizQuestion.findMany({
-      where: { quizId },
-      include: {
-        sign: true,
+    const question = await prisma.quizQuestion.update({
+      where: { id: questionId },
+      data: {
+        type,
+        prompt: prompt?.trim(),
+        signId: signId ? Number(signId) : null,
+        correctAnswer: correctAnswer || null,
+        optionsJson: optionsJson || null,
+        points: points || 1,
+        order: order || 0,
+        isPremium: isPremium || false,
       },
-      orderBy: {
-        createdAt: "asc",
-      },
+      include: { sign: true },
     });
 
-    console.log(questions)
-
-    return res.json(questions);
-  } catch (error) {
-    console.error("Get quiz questions error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    res.json(question);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update question" });
   }
 };
 
-const deleteQuizQuestion = async (req, res) => {
+// ADMIN: DELETE QUIZ QUESTION
+exports.adminDeleteQuizQuestion = async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const questionId = Number(req.params.questionId);
 
-    await prisma.quizQuestion.delete({
-      where: { id },
-    });
+    await prisma.quizQuestion.delete({ where: { id: questionId } });
 
-    return res.json({ message: "Quiz question deleted successfully" });
-  } catch (error) {
-    console.error("Delete quiz question error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    res.json({ message: "Question deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to delete question" });
   }
-};
-
-module.exports = {
-  createQuiz,
-  getQuizzesByLesson,
-  getQuizById,
-  deleteQuiz,
-  createQuizQuestion,
-  getQuizQuestions,
-  deleteQuizQuestion,
 };

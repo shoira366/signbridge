@@ -147,9 +147,43 @@ const deleteSign = async (req, res) => {
   }
 };
 
+// Get completed signs for a lesson
+const getCompletedSigns = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const lessonId = parseInt(req.params.lessonId);
+    
+    // Get all signs for this lesson
+    const signs = await prisma.sign.findMany({
+      where: { lessonId },
+      select: { id: true }
+    });
+    
+    const signIds = signs.map(s => s.id);
+    
+    // Get completed signs
+    const completedSigns = await prisma.userSignProgress.findMany({
+      where: {
+        userId,
+        signId: { in: signIds },
+        mastered: true
+      },
+      select: { signId: true }
+    });
+    
+    const completedSignIds = completedSigns.map(cs => cs.signId);
+    
+    res.json(completedSignIds);
+  } catch (error) {
+    console.error("Get completed signs error:", error);
+    res.status(500).json({ error: "Failed to get completed signs" });
+  }
+};
+
 module.exports = {
   createSign,
   getSignsByLesson,
   updateSign,
-  deleteSign
+  deleteSign,
+  getCompletedSigns
 };

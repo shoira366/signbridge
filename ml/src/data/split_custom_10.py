@@ -12,7 +12,8 @@ random.seed(SEED)
 source_root = Path("data/custom_asl_raw")
 target_root = Path("data/custom_asl_split_10")
 
-allowed_classes = ["P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+allowed_classes = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", 
+                   "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
 
 assert source_root.exists(), f"Missing source folder: {source_root}"
 assert abs(TRAIN_RATIO + VAL_RATIO + TEST_RATIO - 1.0) < 1e-9

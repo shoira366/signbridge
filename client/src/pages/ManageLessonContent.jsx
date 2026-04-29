@@ -2,28 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
+import { 
+  adminGetQuizzesByLesson, 
+  adminCreateQuiz, 
+  adminUpdateQuiz, 
+  adminDeleteQuiz,
+  adminCreateQuizQuestion,
+  adminUpdateQuizQuestion,
+  adminDeleteQuizQuestion
+} from "../api/quiz";
+import "../styles/Admin.css";
 
 const QUESTION_TYPES = [
-  {
-    value: "sign_to_meaning_mcq",
-    label: "Sign image → choose meaning",
-  },
-  {
-    value: "word_to_sign_mcq",
-    label: "Word → choose sign image",
-  },
-  {
-    value: "camera_sign_match",
-    label: "Word → show sign on camera",
-  },
-  {
-    value: "sign_to_text",
-    label: "Sign image → type the meaning",
-  },
-  {
-    value: "match_pairs",
-    label: "Match pairs",
-  },
+  { value: "sign_to_meaning_mcq", label: "Sign image → choose meaning", icon: "🖼️", description: "Show a sign image, user picks the correct meaning" },
+  { value: "word_to_sign_mcq", label: "Word → choose sign image", icon: "📝", description: "Show a word, user picks the correct sign image" },
+  { value: "camera_sign_match", label: "Word → show sign on camera", icon: "📷", description: "User shows the sign to camera" },
+  { value: "sign_to_text", label: "Sign image → type the meaning", icon: "⌨️", description: "User types the meaning of the sign" },
+  { value: "match_pairs", label: "Match pairs", icon: "🔗", description: "Match signs with their meanings" },
 ];
 
 const emptySignForm = {
@@ -49,6 +44,8 @@ const emptyQuestionForm = {
     { leftSignId: "", right: "" },
     { leftSignId: "", right: "" },
   ],
+  isPremium: false,
+  points: 1,
 };
 
 const ManageLessonContent = () => {
@@ -91,8 +88,8 @@ const ManageLessonContent = () => {
 
   const fetchQuizzes = async () => {
     try {
-      const res = await api.get(`quizzes/lessons/${id}`);
-      const quizData = res.data || [];
+      const res = await adminGetQuizzesByLesson(id);
+      const quizData = res || [];
       setQuizzes(quizData);
 
       setSelectedQuizId((prev) => {
@@ -149,9 +146,7 @@ const ManageLessonContent = () => {
 
   const openEditQuizModal = (quiz) => {
     setEditingQuiz(quiz);
-    setQuizForm({
-      title: quiz.title || "",
-    });
+    setQuizForm({ title: quiz.title || "" });
     setIsQuizModalOpen(true);
   };
 
@@ -166,7 +161,6 @@ const ManageLessonContent = () => {
       alert("Create or select a quiz first");
       return;
     }
-
     setEditingQuestion(null);
     setQuestionForm(emptyQuestionForm);
     setIsQuestionModalOpen(true);
@@ -174,16 +168,18 @@ const ManageLessonContent = () => {
 
   const openEditQuestionModal = (question) => {
     const nextForm = {
-        type: question.type || "sign_to_meaning_mcq",
-        prompt: question.prompt || "",
-        signId: question.signId ? String(question.signId) : "",
-        correctAnswer: question.correctAnswer || "",
-        optionsText: ["", "", "", ""],
-        imageOptionSignIds: ["", "", "", ""],
-        matchPairs: [
-            { leftSignId: "", right: "" },
-            { leftSignId: "", right: "" },
-        ],
+      type: question.type || "sign_to_meaning_mcq",
+      prompt: question.prompt || "",
+      signId: question.signId ? String(question.signId) : "",
+      correctAnswer: question.correctAnswer || "",
+      optionsText: ["", "", "", ""],
+      imageOptionSignIds: ["", "", "", ""],
+      matchPairs: [
+        { leftSignId: "", right: "" },
+        { leftSignId: "", right: "" },
+      ],
+      isPremium: question.isPremium || false,
+      points: question.points || 1,
     };
 
     if (question.type === "sign_to_meaning_mcq" && Array.isArray(question.optionsJson)) {
@@ -204,17 +200,16 @@ const ManageLessonContent = () => {
       ];
     }
 
-   if (question.type === "match_pairs" && Array.isArray(question.optionsJson)) {
-        nextForm.matchPairs =
-            question.optionsJson.length > 0
-            ? question.optionsJson.map((pair) => ({
-                leftSignId: pair.leftSignId ? String(pair.leftSignId) : "",
-                right: pair.right || "",
-                }))
-            : [
-                { leftSignId: "", right: "" },
-                { leftSignId: "", right: "" },
-                ];
+    if (question.type === "match_pairs" && Array.isArray(question.optionsJson)) {
+      nextForm.matchPairs = question.optionsJson.length > 0
+        ? question.optionsJson.map((pair) => ({
+            leftSignId: pair.leftSignId ? String(pair.leftSignId) : "",
+            right: pair.right || "",
+          }))
+        : [
+            { leftSignId: "", right: "" },
+            { leftSignId: "", right: "" },
+          ];
     }
 
     setEditingQuestion(question);
@@ -224,12 +219,7 @@ const ManageLessonContent = () => {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0] || null;
-
-    setSignForm((prev) => ({
-      ...prev,
-      image: file,
-    }));
-
+    setSignForm((prev) => ({ ...prev, image: file }));
     if (file) {
       setImagePreview(URL.createObjectURL(file));
     } else {
@@ -239,7 +229,6 @@ const ManageLessonContent = () => {
 
   const handleAddOrUpdateSign = async (e) => {
     e.preventDefault();
-
     if (!signForm.word.trim() || !signForm.meaningUz.trim()) {
       alert("Both sign word and Uzbek meaning are required");
       return;
@@ -250,28 +239,18 @@ const ManageLessonContent = () => {
       formData.append("word", signForm.word.trim());
       formData.append("meaningUz", signForm.meaningUz.trim());
       formData.append("description", signForm.description.trim());
-      formData.append("order", signForm.order || "");
-
-      if (signForm.image) {
-        formData.append("image", signForm.image);
-      }
+      if (signForm.order) formData.append("order", signForm.order);
+      if (signForm.image) formData.append("image", signForm.image);
 
       if (editingSign) {
         await api.put(`/signs/${editingSign.id}`, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
         });
       } else {
         await api.post(`/lessons/${id}/signs`, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
         });
       }
-
       resetSignModal();
       fetchLesson();
     } catch (error) {
@@ -281,25 +260,19 @@ const ManageLessonContent = () => {
   };
 
   const handleDeleteSign = async (signId) => {
-    const confirmed = window.confirm("Delete this sign?");
-    if (!confirmed) return;
-
-    try {
-      await api.delete(`/signs/${signId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      fetchLesson();
-    } catch (error) {
-      console.error(error);
-      alert("Failed to delete sign");
+    if (window.confirm("Delete this sign?")) {
+      try {
+        await api.delete(`/signs/${signId}`, { headers: { Authorization: `Bearer ${token}` } });
+        fetchLesson();
+      } catch (error) {
+        console.error(error);
+        alert("Failed to delete sign");
+      }
     }
   };
 
   const handleAddOrUpdateQuiz = async (e) => {
     e.preventDefault();
-
     if (!quizForm.title.trim()) {
       alert("Quiz title is required");
       return;
@@ -307,33 +280,13 @@ const ManageLessonContent = () => {
 
     try {
       setLoadingQuizAction(true);
-
-      let res;
       if (editingQuiz) {
-        res = await api.put(
-          `/quizzes/${editingQuiz.id}`,
-          { title: quizForm.title.trim() },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        await adminUpdateQuiz(editingQuiz.id, { title: quizForm.title.trim() });
       } else {
-        res = await api.post(
-          `/lessons/${id}/quizzes`,
-          { title: quizForm.title.trim() },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        await adminCreateQuiz(id, { title: quizForm.title.trim() });
       }
-
       resetQuizModal();
       await fetchQuizzes();
-      setSelectedQuizId(res.data.id);
     } catch (error) {
       console.error(error);
       alert(editingQuiz ? "Failed to update quiz" : "Failed to create quiz");
@@ -343,39 +296,25 @@ const ManageLessonContent = () => {
   };
 
   const handleDeleteQuiz = async (quizId) => {
-    const confirmed = window.confirm("Delete this quiz and all its questions?");
-    if (!confirmed) return;
-
-    try {
-      await api.delete(`/quizzes/${quizId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      await fetchQuizzes();
-    } catch (error) {
-      console.error(error);
-      alert("Failed to delete quiz");
+    if (window.confirm("Delete this quiz and all its questions?")) {
+      try {
+        await adminDeleteQuiz(quizId);
+        await fetchQuizzes();
+      } catch (error) {
+        console.error(error);
+        alert("Failed to delete quiz");
+      }
     }
   };
 
-const handleQuestionTypeChange = (value) => {
-  setQuestionForm({
-    type: value,
-    prompt:
-      value === "match_pairs"
-        ? "Match given signs with its meaning"
-        : "",
-    signId: "",
-    correctAnswer: "",
-    optionsText: ["", "", "", ""],
-    imageOptionSignIds: ["", "", "", ""],
-    matchPairs: [
-      { leftSignId: "", right: "" },
-      { leftSignId: "", right: "" },
-    ],
-  });
-};
+  const handleQuestionTypeChange = (value) => {
+    setQuestionForm({
+      ...emptyQuestionForm,
+      type: value,
+      prompt: value === "match_pairs" ? "Match given signs with its meaning" : "",
+      points: 1,
+    });
+  };
 
   const handleTextOptionChange = (index, value) => {
     const next = [...questionForm.optionsText];
@@ -387,6 +326,29 @@ const handleQuestionTypeChange = (value) => {
     const next = [...questionForm.imageOptionSignIds];
     next[index] = value;
     setQuestionForm((prev) => ({ ...prev, imageOptionSignIds: next }));
+  };
+
+  const handleMatchPairChange = (index, field, value) => {
+    const nextPairs = [...questionForm.matchPairs];
+    nextPairs[index] = { ...nextPairs[index], [field]: value };
+    setQuestionForm((prev) => ({ ...prev, matchPairs: nextPairs }));
+  };
+
+  const addMatchPairRow = () => {
+    setQuestionForm((prev) => ({
+      ...prev,
+      matchPairs: [...prev.matchPairs, { leftSignId: "", right: "" }],
+    }));
+  };
+
+  const removeMatchPairRow = (index) => {
+    setQuestionForm((prev) => {
+      if (prev.matchPairs.length <= 2) return prev;
+      return {
+        ...prev,
+        matchPairs: prev.matchPairs.filter((_, i) => i !== index),
+      };
+    });
   };
 
   const handleAddOrUpdateQuestion = async (e) => {
@@ -406,62 +368,47 @@ const handleQuestionTypeChange = (value) => {
       type: questionForm.type,
       prompt: questionForm.prompt.trim(),
       signId: questionForm.signId ? Number(questionForm.signId) : null,
-      correctAnswer: questionForm.correctAnswer
-        ? String(questionForm.correctAnswer).trim()
-        : null,
+      correctAnswer: questionForm.correctAnswer ? String(questionForm.correctAnswer).trim() : null,
       optionsJson: null,
+      points: questionForm.points || 1,
+      isPremium: questionForm.isPremium || false,
     };
 
     if (questionForm.type === "sign_to_meaning_mcq") {
       const cleanOptions = questionForm.optionsText.map((item) => item.trim());
-
       if (cleanOptions.some((item) => !item)) {
         alert("All 4 text options are required");
         return;
       }
-
       if (!payload.signId) {
         alert("Select a linked sign");
         return;
       }
-
       if (!payload.correctAnswer) {
         alert("Correct answer is required");
         return;
       }
-
       payload.optionsJson = cleanOptions;
     }
 
     if (questionForm.type === "word_to_sign_mcq") {
       const optionIds = questionForm.imageOptionSignIds.filter(Boolean);
-
       if (optionIds.length !== 4) {
         alert("Choose 4 sign image options");
         return;
       }
-
       const mappedOptions = optionIds.map((signIdValue) => {
-        const sign = lesson.signs.find((s) => s.id === Number(signIdValue));
-        return sign
-          ? {
-              signId: sign.id,
-              word: sign.word,
-              imageUrl: sign.imageUrl,
-            }
-          : null;
+        const sign = lesson.signs?.find((s) => s.id === Number(signIdValue));
+        return sign ? { signId: sign.id, word: sign.word, imageUrl: sign.imageUrl } : null;
       });
-
       if (mappedOptions.some((item) => !item)) {
         alert("Some selected sign options are invalid");
         return;
       }
-
       if (!payload.correctAnswer) {
         alert("Correct answer is required");
         return;
       }
-
       payload.optionsJson = mappedOptions;
     }
 
@@ -477,7 +424,6 @@ const handleQuestionTypeChange = (value) => {
         alert("Select a linked sign");
         return;
       }
-
       if (!payload.correctAnswer) {
         alert("Correct text answer is required");
         return;
@@ -485,40 +431,28 @@ const handleQuestionTypeChange = (value) => {
     }
 
     if (questionForm.type === "match_pairs") {
-        const cleanedPairs = questionForm.matchPairs
-            .map((pair) => ({
-            leftSignId: pair.leftSignId ? Number(pair.leftSignId) : null,
-            right: pair.right.trim(),
-            }))
-            .filter((pair) => pair.leftSignId && pair.right);
-
-        if (cleanedPairs.length < 2) {
-            alert("Add at least 2 valid sign-meaning pairs");
-            return;
-        }
-
-        payload.signId = null;
-        payload.correctAnswer = null;
-        payload.optionsJson = cleanedPairs;
+      const cleanedPairs = questionForm.matchPairs
+        .map((pair) => ({
+          leftSignId: pair.leftSignId ? Number(pair.leftSignId) : null,
+          right: pair.right.trim(),
+        }))
+        .filter((pair) => pair.leftSignId && pair.right);
+      if (cleanedPairs.length < 2) {
+        alert("Add at least 2 valid sign-meaning pairs");
+        return;
+      }
+      payload.signId = null;
+      payload.correctAnswer = null;
+      payload.optionsJson = cleanedPairs;
     }
 
     try {
       setLoadingQuizAction(true);
-
       if (editingQuestion) {
-        await api.put(`/questions/${editingQuestion.id}`, payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        await adminUpdateQuizQuestion(editingQuestion.id, payload);
       } else {
-        await api.post(`/quizzes/${selectedQuizId}/questions`, payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        await adminCreateQuizQuestion(selectedQuizId, payload);
       }
-
       resetQuestionModal();
       await fetchQuizzes();
     } catch (error) {
@@ -530,189 +464,105 @@ const handleQuestionTypeChange = (value) => {
   };
 
   const handleDeleteQuestion = async (questionId) => {
-    const confirmed = window.confirm("Delete this question?");
-    if (!confirmed) return;
-
-    try {
-      await api.delete(`quizzes/questions/${questionId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      await fetchQuizzes();
-    } catch (error) {
-      console.error(error);
-      alert("Failed to delete question");
+    if (window.confirm("Delete this question?")) {
+      try {
+        await adminDeleteQuizQuestion(questionId);
+        await fetchQuizzes();
+      } catch (error) {
+        console.error(error);
+        alert("Failed to delete question");
+      }
     }
   };
 
-const handleMatchPairChange = (index, field, value) => {
-  const nextPairs = [...questionForm.matchPairs];
-  nextPairs[index] = {
-    ...nextPairs[index],
-    [field]: value,
-  };
-
-  setQuestionForm((prev) => ({
-    ...prev,
-    matchPairs: nextPairs,
-  }));
-};
-
-const addMatchPairRow = () => {
-  setQuestionForm((prev) => ({
-    ...prev,
-    matchPairs: [...prev.matchPairs, { leftSignId: "", right: "" }],
-  }));
-};
-
-const removeMatchPairRow = (index) => {
-  setQuestionForm((prev) => {
-    if (prev.matchPairs.length <= 2) return prev;
-
-    return {
-      ...prev,
-      matchPairs: prev.matchPairs.filter((_, i) => i !== index),
-    };
-  });
-};
-
   if (!lesson) {
-    return <div className="page-container">Loading lesson content...</div>;
+    return <div className="admin-page">Loading lesson content...</div>;
   }
 
   return (
-    <div className="page-container">
-      <div className="actions-row" style={{ marginBottom: "16px" }}>
-        <Link to="/admin/lessons" className="btn btn-secondary">
-          Back to Lessons
+    <div className="admin-page">
+      {/* Back Button */}
+      <div className="admin-back-nav">
+        <Link to="/admin/lessons" className="admin-back-btn">
+          ← Back
         </Link>
       </div>
 
-      <div className="page-header-row">
+      <div className="admin-header-section">
         <div>
-          <h1 className="page-title">Manage Lesson Content</h1>
-          <p className="page-subtitle">
-            Organize lesson signs and quizzes from one structured page.
-          </p>
+          <h1 className="admin-page-title">Manage Lesson Content</h1>
+          <p className="admin-page-subtitle">Organize lesson signs and quizzes</p>
+        </div>
+        <Link to="/admin/lessons" className="admin-btn-secondary">← Back to Lessons</Link>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="admin-stats-grid">
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">📖</div>
+          <div className="admin-stat-info">
+            <h3>{lesson.title}</h3>
+            <p>{lesson.category?.name || "No Category"}</p>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">✋</div>
+          <div className="admin-stat-info">
+            <h3>{lesson.signs?.length || 0}</h3>
+            <p>Total Signs</p>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">📝</div>
+          <div className="admin-stat-info">
+            <h3>{quizzes.length}</h3>
+            <p>Total Quizzes</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginBottom: "24px" }}>
-        <div className="card">
-          <h3 className="section-title">Lesson</h3>
-          <p style={{ margin: 0, fontWeight: 700 }}>{lesson.title}</p>
-          <p style={{ color: "#64748b", marginTop: "6px" }}>
-            {lesson.description || "No lesson description"}
-          </p>
+      {/* Signs Section */}
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <h3>Signs in this Lesson</h3>
+          <button className="admin-btn-primary" onClick={openCreateSignModal}>+ Add Sign</button>
         </div>
-
-        <div className="card">
-          <h3 className="section-title">Signs</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
-            {lesson.signs?.length || 0}
-          </p>
-        </div>
-
-        <div className="card">
-          <h3 className="section-title">Quizzes</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
-            {quizzes.length}
-          </p>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: "24px" }}>
-        <div className="toolbar">
-          <div className="toolbar-left">
-            <h2 className="section-title" style={{ margin: 0 }}>
-              Signs
-            </h2>
-            <span className="badge">{lesson.signs?.length || 0} items</span>
-          </div>
-
-          <div className="toolbar-right">
-            <button className="btn btn-primary" onClick={openCreateSignModal}>
-              + Add Sign
-            </button>
-          </div>
-        </div>
-
         {lesson.signs?.length === 0 ? (
-          <div className="empty-state">No signs added yet.</div>
+          <div className="admin-empty">No signs added yet.</div>
         ) : (
-          <div className="table-wrap">
-            <table className="table">
+          <div className="admin-table-container">
+            <table className="admin-table">
               <thead>
                 <tr>
-                  <th>Image</th>
+                  <th style={{ width: "70px" }}>Image</th>
                   <th>Word</th>
                   <th>Meaning (Uz)</th>
-                  <th>Description</th>
-                  <th>Order</th>
-                  <th>Actions</th>
+                  <th style={{ width: "60px" }}>Order</th>
+                  <th style={{ width: "100px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {lesson.signs.map((sign) => (
                   <tr key={sign.id}>
-                    <td style={{ width: "120px" }}>
+                    <td style={{ textAlign: "center" }}>
                       {sign.imageUrl ? (
-                        <img
-                          src={sign.imageUrl}
-                          alt={sign.word}
-                          style={{
-                            width: "80px",
-                            height: "80px",
-                            objectFit: "cover",
-                            borderRadius: "12px",
-                            border: "1px solid #e2e8f0",
-                          }}
-                        />
+                        <img src={sign.imageUrl} alt={sign.word} className="admin-sign-image" />
                       ) : (
-                        <div
-                          style={{
-                            width: "80px",
-                            height: "80px",
-                            borderRadius: "12px",
-                            background: "#f1f5f9",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#64748b",
-                            fontSize: "12px",
-                            textAlign: "center",
-                            padding: "8px",
-                          }}
-                        >
-                          No image
-                        </div>
+                        <div className="admin-sign-placeholder">No img</div>
                       )}
                     </td>
-
                     <td>
-                      <div style={{ fontWeight: 700 }}>{sign.word}</div>
+                      <strong>{sign.word}</strong>
+                      {sign.description && (
+                        <div className="admin-sign-desc">{sign.description.slice(0, 40)}...</div>
+                      )}
                     </td>
-
                     <td>{sign.meaningUz}</td>
-                    <td>{sign.description || "—"}</td>
-                    <td>{sign.order ?? "—"}</td>
-
+                    <td style={{ textAlign: "center" }}>{sign.order || "—"}</td>
                     <td>
-                      <div className="actions-row">
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => openEditSignModal(sign)}
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => handleDeleteSign(sign.id)}
-                        >
-                          Delete
-                        </button>
+                      <div className="admin-actions">
+                        <button className="admin-btn-icon edit" onClick={() => openEditSignModal(sign)} title="Edit">✏️</button>
+                        <button className="admin-btn-icon delete" onClick={() => handleDeleteSign(sign.id)} title="Delete">🗑️</button>
                       </div>
                     </td>
                   </tr>
@@ -723,74 +573,31 @@ const removeMatchPairRow = (index) => {
         )}
       </div>
 
-      <div className="grid grid-2">
-        <div className="card">
-          <div className="toolbar">
-            <div className="toolbar-left">
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Quizzes
-              </h2>
-              <span className="badge">{quizzes.length} items</span>
-            </div>
-
-            <div className="toolbar-right">
-              <button className="btn btn-primary" onClick={openCreateQuizModal}>
-                + Add Quiz
-              </button>
-            </div>
+      {/* Quizzes and Questions Grid */}
+      <div className="admin-two-columns">
+        {/* Quizzes List */}
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>Quizzes</h3>
+            <button className="admin-btn-primary" onClick={openCreateQuizModal}>+ Add Quiz</button>
           </div>
-
           {quizzes.length === 0 ? (
-            <div className="empty-state">No quizzes added yet.</div>
+            <div className="admin-empty">No quizzes added yet.</div>
           ) : (
-            <div style={{ display: "grid", gap: "12px" }}>
+            <div className="admin-quiz-list">
               {quizzes.map((quiz) => (
                 <div
                   key={quiz.id}
+                  className={`admin-quiz-item ${selectedQuizId === quiz.id ? 'active' : ''}`}
                   onClick={() => setSelectedQuizId(quiz.id)}
-                  style={{
-                    border:
-                      selectedQuizId === quiz.id
-                        ? "2px solid #2563eb"
-                        : "1px solid #e2e8f0",
-                    borderRadius: "14px",
-                    padding: "14px",
-                    background: "#f8fafc",
-                    cursor: "pointer",
-                  }}
                 >
-                  <div
-                    className="actions-row"
-                    style={{ justifyContent: "space-between" }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700 }}>{quiz.title}</div>
-                      <div style={{ color: "#64748b", marginTop: "6px" }}>
-                        {quiz.questions?.length || 0} questions
-                      </div>
-                    </div>
-
-                    <div className="actions-row">
-                      <button
-                        className="btn btn-secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditQuizModal(quiz);
-                        }}
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        className="btn btn-danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteQuiz(quiz.id);
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
+                  <div>
+                    <strong>{quiz.title}</strong>
+                    <div className="admin-quiz-stats">{quiz.questions?.length || 0} questions</div>
+                  </div>
+                  <div className="admin-actions">
+                    <button className="admin-btn-icon edit" onClick={(e) => { e.stopPropagation(); openEditQuizModal(quiz); }}>✏️</button>
+                    <button className="admin-btn-icon delete" onClick={(e) => { e.stopPropagation(); handleDeleteQuiz(quiz.id); }}>🗑️</button>
                   </div>
                 </div>
               ))}
@@ -798,64 +605,58 @@ const removeMatchPairRow = (index) => {
           )}
         </div>
 
-        <div className="card">
-          <div className="toolbar">
-            <div className="toolbar-left">
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Quiz Questions
-              </h2>
-              <span className="badge">
-                {currentQuiz?.questions?.length || 0} items
-              </span>
-            </div>
-
-            <div className="toolbar-right">
-              <button className="btn btn-primary" onClick={openCreateQuestionModal}>
-                + Add Question
-              </button>
-            </div>
+        {/* Questions List */}
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>Quiz Questions</h3>
+            <button className="admin-btn-primary" onClick={openCreateQuestionModal}>+ Add Question</button>
           </div>
-
           {!currentQuiz ? (
-            <div className="empty-state">Select a quiz first.</div>
+            <div className="admin-empty">Select a quiz first.</div>
           ) : currentQuiz.questions?.length === 0 ? (
-            <div className="empty-state">No questions in this quiz yet.</div>
+            <div className="admin-empty">No questions in this quiz yet.</div>
           ) : (
-            <div className="table-wrap">
-              <table className="table">
+            <div className="admin-table-container">
+              <table className="admin-table">
                 <thead>
                   <tr>
-                    <th>Type</th>
+                    <th style={{ width: "100px" }}>Type</th>
                     <th>Prompt</th>
-                    <th>Linked Sign</th>
-                    <th>Correct Answer</th>
-                    <th>Actions</th>
+                    <th style={{ width: "120px" }}>Linked Sign</th>
+                    <th style={{ width: "80px" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentQuiz.questions.map((q) => (
                     <tr key={q.id}>
                       <td>
-                        <span className="badge">{q.type}</span>
+                        <span className="admin-badge">
+                          {q.type === "sign_to_meaning_mcq" && "🖼️ MCQ"}
+                          {q.type === "word_to_sign_mcq" && "📝 Word→Sign"}
+                          {q.type === "camera_sign_match" && "📷 Camera"}
+                          {q.type === "sign_to_text" && "⌨️ Text"}
+                          {q.type === "match_pairs" && "🔗 Match"}
+                        </span>
                       </td>
-                      <td>{q.prompt}</td>
-                      <td>{q.sign?.word || "—"}</td>
-                      <td>{q.correctAnswer || "—"}</td>
+                      <td style={{ fontSize: "13px" }}>
+                        {q.prompt?.length > 50 ? q.prompt.slice(0, 50) + "..." : q.prompt}
+                      </td>
                       <td>
-                        <div className="actions-row">
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => openEditQuestionModal(q)}
-                          >
-                            Edit
-                          </button>
-
-                          <button
-                            className="btn btn-danger"
-                            onClick={() => handleDeleteQuestion(q.id)}
-                          >
-                            Delete
-                          </button>
+                        {q.sign?.word ? (
+                          <div className="admin-linked-sign">
+                            {q.sign.imageUrl && (
+                              <img src={q.sign.imageUrl} alt={q.sign.word} className="admin-linked-sign-image" />
+                            )}
+                            <span>{q.sign.word}</span>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
+                        <div className="admin-actions">
+                          <button className="admin-btn-icon edit" onClick={() => openEditQuestionModal(q)}>✏️</button>
+                          <button className="admin-btn-icon delete" onClick={() => handleDeleteQuestion(q.id)}>🗑️</button>
                         </div>
                       </td>
                     </tr>
@@ -867,507 +668,312 @@ const removeMatchPairRow = (index) => {
         </div>
       </div>
 
+      {/* Sign Modal */}
       {isSignModalOpen && (
-        <div className="modal-overlay" onClick={resetSignModal}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="page-header-row" style={{ marginBottom: "16px" }}>
-              <div>
-                <h2 className="section-title" style={{ margin: 0 }}>
-                  {editingSign ? "Edit Sign" : "Add Sign"}
-                </h2>
-                <p className="page-subtitle" style={{ margin: "8px 0 0" }}>
-                  {editingSign
-                    ? "Update the selected sign."
-                    : "Create a new sign for this lesson."}
-                </p>
-              </div>
-
-              <button className="btn btn-secondary" onClick={resetSignModal}>
-                Close
-              </button>
+        <div className="admin-modal-overlay" onClick={resetSignModal}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2>{editingSign ? "Edit Sign" : "Add New Sign"}</h2>
+              <button className="admin-modal-close" onClick={resetSignModal}>×</button>
             </div>
-
             <form onSubmit={handleAddOrUpdateSign}>
-              <div className="form-group">
-                <label className="form-label">Word</label>
-                <input
-                  className="input"
-                  placeholder="e.g. A"
-                  value={signForm.word}
-                  onChange={(e) =>
-                    setSignForm({ ...signForm, word: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Meaning (Uzbek)</label>
-                <input
-                  className="input"
-                  placeholder="e.g. A harfi"
-                  value={signForm.meaningUz}
-                  onChange={(e) =>
-                    setSignForm({ ...signForm, meaningUz: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Description</label>
-                <textarea
-                  className="textarea"
-                  rows="4"
-                  placeholder="Optional sign description"
-                  value={signForm.description}
-                  onChange={(e) =>
-                    setSignForm({ ...signForm, description: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Order</label>
-                <input
-                  className="input"
-                  type="number"
-                  placeholder="e.g. 1"
-                  value={signForm.order}
-                  onChange={(e) =>
-                    setSignForm({ ...signForm, order: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Sign Image</label>
-                <input
-                  className="input"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                />
-              </div>
-
-              {imagePreview && (
-                <div style={{ marginBottom: "16px" }}>
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    style={{
-                      width: "180px",
-                      height: "180px",
-                      objectFit: "cover",
-                      borderRadius: "12px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  />
+              <div className="admin-modal-body">
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label>Word *</label>
+                    <input type="text" value={signForm.word} onChange={(e) => setSignForm({ ...signForm, word: e.target.value })} required />
+                  </div>
+                  <div className="admin-form-group">
+                    <label>Meaning (Uzbek) *</label>
+                    <input type="text" value={signForm.meaningUz} onChange={(e) => setSignForm({ ...signForm, meaningUz: e.target.value })} required />
+                  </div>
                 </div>
-              )}
-
-              <div className="actions-row">
-                <button className="btn btn-primary" type="submit">
-                  {editingSign ? "Update Sign" : "Save Sign"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={resetSignModal}
-                >
-                  Cancel
-                </button>
+                <div className="admin-form-group">
+                  <label>Description</label>
+                  <textarea rows="3" value={signForm.description} onChange={(e) => setSignForm({ ...signForm, description: e.target.value })} />
+                </div>
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label>Order</label>
+                    <input type="number" value={signForm.order} onChange={(e) => setSignForm({ ...signForm, order: e.target.value })} />
+                  </div>
+                  <div className="admin-form-group">
+                    <label>Image</label>
+                    <input type="file" accept="image/*" onChange={handleImageChange} />
+                  </div>
+                </div>
+                {imagePreview && <img src={imagePreview} alt="Preview" className="admin-image-preview" />}
+              </div>
+              <div className="admin-modal-footer">
+                <button type="button" className="admin-btn-secondary" onClick={resetSignModal}>Cancel</button>
+                <button type="submit" className="admin-btn-primary">{editingSign ? "Update" : "Create"}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Quiz Modal */}
       {isQuizModalOpen && (
-        <div className="modal-overlay" onClick={resetQuizModal}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="page-header-row" style={{ marginBottom: "16px" }}>
-              <div>
-                <h2 className="section-title" style={{ margin: 0 }}>
-                  {editingQuiz ? "Edit Quiz" : "Add Quiz"}
-                </h2>
-                <p className="page-subtitle" style={{ margin: "8px 0 0" }}>
-                  {editingQuiz
-                    ? "Update the selected quiz."
-                    : "Create a quiz container for this lesson."}
-                </p>
-              </div>
-
-              <button className="btn btn-secondary" onClick={resetQuizModal}>
-                Close
-              </button>
+        <div className="admin-modal-overlay" onClick={resetQuizModal}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2>{editingQuiz ? "Edit Quiz" : "Create New Quiz"}</h2>
+              <button className="admin-modal-close" onClick={resetQuizModal}>×</button>
             </div>
-
             <form onSubmit={handleAddOrUpdateQuiz}>
-              <div className="form-group">
-                <label className="form-label">Quiz Title</label>
-                <input
-                  className="input"
-                  placeholder="e.g. A–E Practice Quiz"
-                  value={quizForm.title}
-                  onChange={(e) =>
-                    setQuizForm({ ...quizForm, title: e.target.value })
-                  }
-                />
+              <div className="admin-modal-body">
+                <div className="admin-form-group">
+                  <label>Quiz Title *</label>
+                  <input type="text" placeholder="e.g., Alphabet Practice" value={quizForm.title} onChange={(e) => setQuizForm({ ...quizForm, title: e.target.value })} required />
+                </div>
               </div>
-
-              <div className="actions-row">
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={loadingQuizAction}
-                >
-                  {loadingQuizAction
-                    ? "Saving..."
-                    : editingQuiz
-                    ? "Update Quiz"
-                    : "Save Quiz"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={resetQuizModal}
-                >
-                  Cancel
-                </button>
+              <div className="admin-modal-footer">
+                <button type="button" className="admin-btn-secondary" onClick={resetQuizModal}>Cancel</button>
+                <button type="submit" className="admin-btn-primary" disabled={loadingQuizAction}>{editingQuiz ? "Update" : "Create"}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Question Modal */}
       {isQuestionModalOpen && (
-        <div className="modal-overlay" onClick={resetQuestionModal}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="page-header-row" style={{ marginBottom: "16px" }}>
+        <div className="admin-modal-overlay" onClick={resetQuestionModal}>
+          <div className="admin-modal admin-modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
               <div>
-                <h2 className="section-title" style={{ margin: 0 }}>
-                  {editingQuestion ? "Edit Quiz Question" : "Add Quiz Question"}
-                </h2>
-                <p className="page-subtitle" style={{ margin: "8px 0 0" }}>
-                  {editingQuestion
-                    ? "Update the selected quiz question."
-                    : "Create a typed quiz question inside the selected quiz."}
-                </p>
+                <h2>{editingQuestion ? "Edit Quiz Question" : "Create New Question"}</h2>
+                <p className="admin-modal-subtitle">Configure the question details and options</p>
               </div>
-
-              <button className="btn btn-secondary" onClick={resetQuestionModal}>
-                Close
-              </button>
+              <button className="admin-modal-close" onClick={resetQuestionModal}>×</button>
             </div>
-
             <form onSubmit={handleAddOrUpdateQuestion}>
-              <div className="form-group">
-                <label className="form-label">Question Type</label>
-                <select
-                  className="select"
-                  value={questionForm.type}
-                  onChange={(e) => handleQuestionTypeChange(e.target.value)}
-                >
-                  {QUESTION_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Prompt</label>
-                <input
-                  className="input"
-                  placeholder="Enter question prompt"
-                  value={questionForm.prompt}
-                  onChange={(e) =>
-                    setQuestionForm({ ...questionForm, prompt: e.target.value })
-                  }
-                />
-              </div>
-
-              {["sign_to_meaning_mcq", "camera_sign_match", "sign_to_text"].includes(
-                questionForm.type
-              ) && (
-                <div className="form-group">
-                  <label className="form-label">Linked Sign</label>
-                  <select
-                    className="select"
-                    value={questionForm.signId}
-                    onChange={(e) =>
-                      setQuestionForm({ ...questionForm, signId: e.target.value })
-                    }
-                  >
-                    <option value="">Select sign</option>
-                    {lesson.signs?.map((sign) => (
-                      <option key={sign.id} value={sign.id}>
-                        {sign.word}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {questionForm.type === "sign_to_meaning_mcq" && (
-                <>
-                  {[0, 1, 2, 3].map((idx) => (
-                    <div className="form-group" key={idx}>
-                      <label className="form-label">Option {idx + 1}</label>
-                      <input
-                        className="input"
-                        value={questionForm.optionsText[idx]}
-                        onChange={(e) =>
-                          handleTextOptionChange(idx, e.target.value)
-                        }
-                      />
-                    </div>
-                  ))}
-
-                  <div className="form-group">
-                    <label className="form-label">Correct Answer</label>
-                    <input
-                      className="input"
-                      placeholder="Exact correct meaning"
-                      value={questionForm.correctAnswer}
-                      onChange={(e) =>
-                        setQuestionForm({
-                          ...questionForm,
-                          correctAnswer: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
-
-              {questionForm.type === "word_to_sign_mcq" && (
-                <>
-                  {[0, 1, 2, 3].map((idx) => (
-                    <div className="form-group" key={idx}>
-                      <label className="form-label">Image Option {idx + 1}</label>
-                      <select
-                        className="select"
-                        value={questionForm.imageOptionSignIds[idx]}
-                        onChange={(e) =>
-                          handleImageOptionChange(idx, e.target.value)
-                        }
+              <div className="admin-modal-body">
+                {/* Question Type Selection */}
+                <div className="admin-form-group">
+                  <label className="admin-label">Question Type *</label>
+                  <div className="admin-question-types">
+                    {QUESTION_TYPES.map((type) => (
+                      <div
+                        key={type.value}
+                        className={`admin-type-card ${questionForm.type === type.value ? 'active' : ''}`}
+                        onClick={() => handleQuestionTypeChange(type.value)}
                       >
-                        <option value="">Select sign</option>
-                        {lesson.signs?.map((sign) => (
-                          <option key={sign.id} value={sign.id}>
-                            {sign.word}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-
-                  <div className="form-group">
-                    <label className="form-label">Correct Answer</label>
-                    <input
-                      className="input"
-                      placeholder="Correct sign id"
-                      value={questionForm.correctAnswer}
-                      onChange={(e) =>
-                        setQuestionForm({
-                          ...questionForm,
-                          correctAnswer: e.target.value,
-                        })
-                      }
-                    />
+                        <div className="admin-type-icon">{type.icon}</div>
+                        <div className="admin-type-info">
+                          <div className="admin-type-name">{type.label}</div>
+                          <div className="admin-type-desc">{type.description}</div>
+                        </div>
+                        {questionForm.type === type.value && <div className="admin-type-check">✓</div>}
+                      </div>
+                    ))}
                   </div>
-                </>
-              )}
+                </div>
 
-              {questionForm.type === "sign_to_text" && (
-                <div className="form-group">
-                  <label className="form-label">Correct Text Answer</label>
+                {/* Question Prompt */}
+                <div className="admin-form-group">
+                  <label className="admin-label">Question Prompt *</label>
                   <input
-                    className="input"
-                    placeholder="Type the correct answer"
-                    value={questionForm.correctAnswer}
-                    onChange={(e) =>
-                      setQuestionForm({
-                        ...questionForm,
-                        correctAnswer: e.target.value,
-                      })
-                    }
+                    type="text"
+                    className="admin-input"
+                    placeholder="e.g., What is the meaning of this sign?"
+                    value={questionForm.prompt}
+                    onChange={(e) => setQuestionForm({ ...questionForm, prompt: e.target.value })}
+                    required
                   />
                 </div>
-              )}
 
-              {questionForm.type === "camera_sign_match" && (
-                <div className="form-group">
-                  <label className="form-label">Expected Sign</label>
-                  <p style={{ color: "#64748b", marginTop: 0 }}>
-                    The selected linked sign will be used as the expected answer.
-                  </p>
-                </div>
-              )}
-
-              {questionForm.type === "match_pairs" && (
-                <div
-                    style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    background: "#f8fafc",
-                    }}
-                >
-                    <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "14px",
-                        gap: "12px",
-                        flexWrap: "wrap",
-                    }}
+                {/* Linked Sign */}
+                {["sign_to_meaning_mcq", "camera_sign_match", "sign_to_text"].includes(questionForm.type) && (
+                  <div className="admin-form-group">
+                    <label className="admin-label">Linked Sign *</label>
+                    <select
+                      className="admin-select"
+                      value={questionForm.signId}
+                      onChange={(e) => setQuestionForm({ ...questionForm, signId: e.target.value })}
+                      required
                     >
-                    <div>
-                        <label className="form-label" style={{ marginBottom: "4px", display: "block" }}>
-                        Match Pairs
-                        </label>
-                        <p style={{ margin: 0, color: "#64748b" }}>
-                        Match given signs with their meanings.
-                        </p>
-                    </div>
-
-                    <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={addMatchPairRow}
-                    >
-                        + Add Pair
-                    </button>
-                    </div>
-
-                    <div style={{ display: "grid", gap: "12px" }}>
-                    {questionForm.matchPairs.map((pair, index) => {
-                        const selectedSign = lesson.signs?.find(
-                        (s) => s.id === Number(pair.leftSignId)
-                        );
-
-                        return (
-                        <div
-                            key={index}
-                            style={{
-                            display: "grid",
-                            gridTemplateColumns: "220px 1fr auto",
-                            gap: "12px",
-                            alignItems: "end",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: "12px",
-                            padding: "12px",
-                            background: "#fff",
-                            }}
-                        >
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label">Sign {index + 1}</label>
-                            <select
-                                className="select"
-                                value={pair.leftSignId}
-                                onChange={(e) =>
-                                handleMatchPairChange(index, "leftSignId", e.target.value)
-                                }
-                            >
-                                <option value="">Select sign</option>
-                                {lesson.signs?.map((sign) => (
-                                <option key={sign.id} value={sign.id}>
-                                    {sign.word}
-                                </option>
-                                ))}
-                            </select>
-
-                            <div style={{ marginTop: "10px" }}>
-                                {selectedSign?.imageUrl ? (
-                                <img
-                                    src={selectedSign.imageUrl}
-                                    alt={selectedSign.word}
-                                    style={{
-                                    width: "100%",
-                                    height: "160px",
-                                    objectFit: "cover",
-                                    borderRadius: "12px",
-                                    border: "1px solid #e2e8f0",
-                                    }}
-                                />
-                                ) : (
-                                <div
-                                    style={{
-                                    width: "100%",
-                                    height: "160px",
-                                    borderRadius: "12px",
-                                    background: "#f1f5f9",
-                                    border: "1px dashed #cbd5e1",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    color: "#64748b",
-                                    fontSize: "14px",
-                                    textAlign: "center",
-                                    padding: "12px",
-                                    }}
-                                >
-                                    No sign selected
-                                </div>
-                                )}
-                            </div>
-                            </div>
-
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label">Meaning {index + 1}</label>
-                            <input
-                                className="input"
-                                placeholder="e.g. Apple"
-                                value={pair.right}
-                                onChange={(e) =>
-                                handleMatchPairChange(index, "right", e.target.value)
-                                }
-                            />
-                            </div>
-
-                            <button
-                            type="button"
-                            className="btn btn-danger"
-                            onClick={() => removeMatchPairRow(index)}
-                            disabled={questionForm.matchPairs.length <= 2}
-                            style={{
-                                opacity: questionForm.matchPairs.length <= 2 ? 0.6 : 1,
-                                cursor:
-                                questionForm.matchPairs.length <= 2
-                                    ? "not-allowed"
-                                    : "pointer",
-                            }}
-                            >
-                            Remove
-                            </button>
-                        </div>
-                        );
-                    })}
-                    </div>
-                </div>
+                      <option value="">Select a sign</option>
+                      {lesson.signs?.map((sign) => (
+                        <option key={sign.id} value={sign.id}>{sign.word} - {sign.meaningUz}</option>
+                      ))}
+                    </select>
+                    {questionForm.signId && lesson.signs?.find(s => s.id === Number(questionForm.signId))?.imageUrl && (
+                      <div className="admin-sign-preview">
+                        <img src={lesson.signs.find(s => s.id === Number(questionForm.signId)).imageUrl} alt="Sign preview" />
+                      </div>
+                    )}
+                  </div>
                 )}
 
-              <div className="actions-row">
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={loadingQuizAction}
-                >
-                  {loadingQuizAction
-                    ? "Saving..."
-                    : editingQuestion
-                    ? "Update Question"
-                    : "Save Question"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={resetQuestionModal}
-                >
-                  Cancel
+                {/* MCQ Text Options */}
+                {questionForm.type === "sign_to_meaning_mcq" && (
+                  <div className="admin-form-group">
+                    <label className="admin-label">Answer Options *</label>
+                    <div className="admin-options-grid">
+                      {[0, 1, 2, 3].map((idx) => (
+                        <div key={idx} className="admin-option-item">
+                          <span className="admin-option-letter">{String.fromCharCode(65 + idx)}</span>
+                          <input
+                            type="text"
+                            className="admin-input"
+                            placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                            value={questionForm.optionsText[idx]}
+                            onChange={(e) => handleTextOptionChange(idx, e.target.value)}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <label className="admin-label" style={{ marginTop: "16px" }}>Correct Answer *</label>
+                    <select
+                      className="admin-select"
+                      value={questionForm.correctAnswer}
+                      onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })}
+                      required
+                    >
+                      <option value="">Select correct answer</option>
+                      {questionForm.optionsText.map((opt, idx) => opt && (
+                        <option key={idx} value={opt}>{String.fromCharCode(65 + idx)}. {opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Word to Sign Options */}
+                {questionForm.type === "word_to_sign_mcq" && (
+                  <div className="admin-form-group">
+                    <label className="admin-label">Image Options *</label>
+                    <div className="admin-options-grid">
+                      {[0, 1, 2, 3].map((idx) => (
+                        <div key={idx} className="admin-option-item">
+                          <span className="admin-option-letter">{String.fromCharCode(65 + idx)}</span>
+                          <select
+                            className="admin-select"
+                            value={questionForm.imageOptionSignIds[idx]}
+                            onChange={(e) => handleImageOptionChange(idx, e.target.value)}
+                            required
+                          >
+                            <option value="">Select sign</option>
+                            {lesson.signs?.map((sign) => (
+                              <option key={sign.id} value={sign.id}>{sign.word}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                    <label className="admin-label" style={{ marginTop: "16px" }}>Correct Answer *</label>
+                    <select
+                      className="admin-select"
+                      value={questionForm.correctAnswer}
+                      onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })}
+                      required
+                    >
+                      <option value="">Select correct answer</option>
+                      {questionForm.imageOptionSignIds.map((signId, idx) => {
+                        const sign = lesson.signs?.find(s => s.id === Number(signId));
+                        return signId && sign ? (
+                          <option key={idx} value={signId}>{String.fromCharCode(65 + idx)}. {sign.word}</option>
+                        ) : null;
+                      })}
+                    </select>
+                  </div>
+                )}
+
+                {/* Sign to Text */}
+                {questionForm.type === "sign_to_text" && (
+                  <div className="admin-form-group">
+                    <label className="admin-label">Correct Answer (Text) *</label>
+                    <input
+                      type="text"
+                      className="admin-input"
+                      placeholder="e.g., Hello"
+                      value={questionForm.correctAnswer}
+                      onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Match Pairs */}
+                {questionForm.type === "match_pairs" && (
+                  <div className="admin-form-group">
+                    <label className="admin-label">Match Pairs *</label>
+                    <div className="admin-match-pairs">
+                      {questionForm.matchPairs.map((pair, index) => {
+                        const selectedSign = lesson.signs?.find(s => s.id === Number(pair.leftSignId));
+                        return (
+                          <div key={index} className="admin-pair-item">
+                            <div className="admin-pair-left">
+                              <label>Sign {index + 1}</label>
+                              <select
+                                className="admin-select"
+                                value={pair.leftSignId}
+                                onChange={(e) => handleMatchPairChange(index, "leftSignId", e.target.value)}
+                              >
+                                <option value="">Select sign</option>
+                                {lesson.signs?.map((sign) => (
+                                  <option key={sign.id} value={sign.id}>{sign.word}</option>
+                                ))}
+                              </select>
+                              {selectedSign?.imageUrl && (
+                                <img src={selectedSign.imageUrl} alt={selectedSign.word} className="admin-pair-image" />
+                              )}
+                            </div>
+                            <div className="admin-pair-arrow">→</div>
+                            <div className="admin-pair-right">
+                              <label>Meaning {index + 1}</label>
+                              <input
+                                type="text"
+                                className="admin-input"
+                                placeholder="e.g., Hello"
+                                value={pair.right}
+                                onChange={(e) => handleMatchPairChange(index, "right", e.target.value)}
+                              />
+                            </div>
+                            {questionForm.matchPairs.length > 2 && (
+                              <button type="button" className="admin-pair-remove" onClick={() => removeMatchPairRow(index)}>×</button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <button type="button" className="admin-add-pair" onClick={addMatchPairRow}>+ Add Pair</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Settings Row */}
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-label">Points</label>
+                    <input
+                      type="number"
+                      className="admin-input"
+                      min="1"
+                      max="10"
+                      value={questionForm.points}
+                      onChange={(e) => setQuestionForm({ ...questionForm, points: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                  <div className="admin-form-group">
+                    <label className="admin-label admin-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={questionForm.isPremium}
+                        onChange={(e) => setQuestionForm({ ...questionForm, isPremium: e.target.checked })}
+                      />
+                      <span>Premium Question (only for subscribers)</span>
+                    </label>
+                    <p className="admin-hint">Premium questions are only visible to users with active subscriptions</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="admin-modal-footer">
+                <button type="button" className="admin-btn-secondary" onClick={resetQuestionModal}>Cancel</button>
+                <button type="submit" className="admin-btn-primary" disabled={loadingQuizAction}>
+                  {loadingQuizAction ? "Saving..." : (editingQuestion ? "Update Question" : "Create Question")}
                 </button>
               </div>
             </form>

@@ -34,13 +34,16 @@ const {
   createSign,
   getSignsByLesson,
   updateSign, 
-  deleteSign
+  deleteSign,
+  getCompletedSigns
 } = require("../controllers/sign.controller");
 const { upload } = require("../middlewares/upload.middleware");
+const { authenticateUser } = require("../middlewares/auth.middleware")
 
 router.post("/lessons/:lessonId/", upload.single("image"), createSign);
 router.get("/lessons/:lessonId/signs", getSignsByLesson);
 router.put("/:id", upload.single("image"), updateSign);
 router.delete("/signs/:id", deleteSign);
+router.get("/lesson/:lessonId/completed-signs", authenticateUser, getCompletedSigns);
 
 module.exports = router;

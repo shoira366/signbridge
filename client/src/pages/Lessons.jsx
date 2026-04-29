@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
+import api from "../api/axios";
+import { getMyProgress } from "../api/progress";
+import "../styles/Lesson.css";
 
 const Lessons = () => {
   const { token, role } = useAuth();
@@ -11,62 +13,62 @@ const Lessons = () => {
   const [progress, setProgress] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCategories();
-    fetchLessons();
-
-    if (token && role !== "admin") {
-      fetchProgress();
-    }
+    fetchInitialData();
   }, [token, role]);
 
-  const fetchCategories = async () => {
+  const fetchInitialData = async () => {
     try {
-      const res = await api.get("/categories");
-      setCategories(res.data);
-    } catch (error) {
-      console.error("Failed to fetch categories:", error);
-    }
-  };
+      setLoading(true);
 
-  const fetchLessons = async () => {
-    try {
-      const res = await api.get("/lessons");
-      setLessons(res.data);
-    } catch (error) {
-      console.error("Failed to fetch lessons:", error);
-    }
-  };
+      const [categoriesRes, lessonsRes] = await Promise.all([
+        api.get("/categories"),
+        api.get("/lessons"),
+      ]);
 
-  const fetchProgress = async () => {
-    try {
-      const res = await api.get("/progress/me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setProgress(res.data);
+      setCategories(categoriesRes.data);
+      setLessons(lessonsRes.data);
+
+      if (token && role !== "admin") {
+        const progressData = await getMyProgress(token);
+        
+        let progressArray = [];
+        if (progressData && progressData.progress) {
+          progressArray = progressData.progress || [];
+        } else if (Array.isArray(progressData)) {
+          progressArray = progressData;
+        }
+        
+        setProgress(progressArray);
+      } else {
+        setProgress([]);
+      }
     } catch (error) {
-      console.error("Failed to fetch progress:", error);
+      console.error("Failed to load lessons page data:", error);
+      setProgress([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const getLessonProgress = (lessonId) => {
-    return progress.find((item) => item.lessonId === lessonId);
+    return progress.find((item) => item.lessonId === lessonId) || null;
   };
 
   const getQuestionCount = (lesson) => {
     if (!lesson?.quizzes?.length) return 0;
+
     return lesson.quizzes.reduce((sum, quiz) => {
       return sum + (quiz.questions?.length || 0);
     }, 0);
   };
 
   const filteredLessons = useMemo(() => {
-    return lessons.filter((lesson) => {
-      const q = search.toLowerCase().trim();
+    const q = search.toLowerCase().trim();
 
+    return lessons.filter((lesson) => {
       const matchesSearch =
         !q ||
         (lesson.title || "").toLowerCase().includes(q) ||
@@ -86,72 +88,87 @@ const Lessons = () => {
   }, [progress]);
 
   const averageScore = useMemo(() => {
-    if (progress.length === 0) return 0;
-    const total = progress.reduce((sum, item) => sum + (item.score || 0), 0);
+    if (!progress.length) return 0;
+    const total = progress.reduce((sum, item) => sum + (item.lastScore || 0), 0);
     return Math.round(total / progress.length);
   }, [progress]);
 
+  const getStatusLabel = (lessonProgress) => {
+    if (lessonProgress?.completed) return "Completed";
+    if (lessonProgress) return "In Progress";
+    return "Not Started";
+  };
+
+  const getStatusClass = (lessonProgress) => {
+    if (lessonProgress?.completed) return "completed";
+    if (lessonProgress) return "in-progress";
+    return "not-started";
+  };
+
+  const getQuizState = (hasQuiz, lessonProgress) => {
+    if (!hasQuiz) return { label: "No Quiz", class: "no-quiz" };
+    if (lessonProgress?.completed) return { label: "Unlocked", class: "unlocked" };
+    return { label: "Locked", class: "locked" };
+  };
+
+  if (loading) {
+    return (
+      <div className="lessons-page">
+        <div className="loading-container">Loading lessons...</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="page-container">
-      <div className="page-header-row">
-        <div>
-          <span className="badge">Learning Library</span>
-          <h1 className="page-title" style={{ marginTop: "14px" }}>
-            Explore Lessons
-          </h1>
-          <p className="page-subtitle">
-            Discover Uzbek Sign Language lessons by topic, preview real lesson
-            signs, and continue your progress step by step.
-          </p>
-        </div>
+    <div className="lessons-page">
+      <div className="lessons-header">
+        <span className="lessons-badge">Learning Library</span>
+        <h1 className="lessons-title">Explore Lessons</h1>
+        <p className="lessons-subtitle">
+          Study each lesson first, then unlock practice quizzes step by step.
+        </p>
       </div>
 
-      <div className="grid grid-3" style={{ marginBottom: "24px" }}>
-        <div className="card">
-          <h3 className="section-title">Total Lessons</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
-            {lessons.length}
-          </p>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <span className="stat-label">Total Lessons</span>
+          <strong className="stat-value">{lessons.length}</strong>
         </div>
 
-        <div className="card">
-          <h3 className="section-title">Completed</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
+        <div className="stat-card">
+          <span className="stat-label">Completed</span>
+          <strong className="stat-value">
             {token && role !== "admin" ? completedCount : 0}
-          </p>
+          </strong>
         </div>
 
-        <div className="card">
-          <h3 className="section-title">Average Score</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
+        <div className="stat-card">
+          <span className="stat-label">Average Score</span>
+          <strong className="stat-value">
             {token && role !== "admin" ? `${averageScore}%` : "—"}
-          </p>
+          </strong>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: "24px" }}>
+      <div className="toolbar-card card">
         <div className="toolbar">
           <div className="toolbar-left">
-            <h2 className="section-title" style={{ margin: 0 }}>
-              Find a lesson
-            </h2>
+            <h2 className="toolbar-title">Find a lesson</h2>
           </div>
 
           <div className="toolbar-right">
             <input
-              className="input"
+              className="search-input"
               type="text"
               placeholder="Search lessons, topics, categories..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: "280px" }}
             />
 
             <select
-              className="select"
+              className="category-select"
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{ width: "220px" }}
             >
               <option value="">All Categories</option>
               {categories.map((cat) => (
@@ -169,94 +186,67 @@ const Lessons = () => {
           No lessons found for your current search or selected category.
         </div>
       ) : (
-        <div style={{ display: "grid", gap: "24px" }}>
+        <div>
           {filteredLessons.map((lesson) => {
             const lessonProgress = getLessonProgress(lesson.id);
+            const questionCount = getQuestionCount(lesson);
+            const hasQuiz = questionCount > 0;
             const signPreview = (lesson.signs || [])
               .slice()
-              .sort((a, b) => {
-                const ao = a.order ?? 999999;
-                const bo = b.order ?? 999999;
-                return ao - bo;
-              })
+              .sort((a, b) => (a.order ?? 999999) - (b.order ?? 999999))
               .slice(0, 4);
 
-            const questionCount = getQuestionCount(lesson);
+            const statusLabel = getStatusLabel(lessonProgress);
+            const statusClass = getStatusClass(lessonProgress);
+            const quizState = getQuizState(hasQuiz, lessonProgress);
 
             return (
-              <div key={lesson.id} className="card card-hover">
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <div>
-                    <span className="badge">{lesson.difficulty || "lesson"}</span>
-                    <h3 style={{ marginTop: "14px", marginBottom: "10px" }}>
-                      {lesson.title}
-                    </h3>
+              <div key={lesson.id} className="lesson-card">
+                <div className="lesson-header">
+                  <div className="lesson-title-section">
+                    <span className="lesson-difficulty-badge">
+                      {lesson.difficulty || "lesson"}
+                    </span>
+                    <h3 className="lesson-title">{lesson.title}</h3>
                   </div>
 
-                  {lessonProgress && (
-                    <span className="badge">
-                      {lessonProgress.completed ? "Completed" : "In Progress"}
+                  <div className="lesson-status-badges">
+                    <span className={`status-badge ${statusClass}`}>
+                      {statusLabel}
                     </span>
-                  )}
+                    <span className={`quiz-badge ${quizState.class}`}>
+                      Quiz: {quizState.label}
+                    </span>
+                  </div>
                 </div>
 
-                <p className="page-subtitle" style={{ marginBottom: "16px" }}>
+                <p className="lesson-description">
                   {lesson.description || "No lesson description"}
                 </p>
 
-                <div className="lesson-meta" style={{ marginBottom: "18px" }}>
+                <div className="lesson-meta">
                   <span className="meta-pill">
                     Category: {lesson.category?.name || "Unknown"}
                   </span>
-
                   <span className="meta-pill">
                     {lesson.signs?.length || 0} signs
                   </span>
-
                   <span className="meta-pill">
                     {questionCount} practice question{questionCount === 1 ? "" : "s"}
                   </span>
-
                   {lessonProgress && (
                     <span className="meta-pill">
-                      Score: {lessonProgress.score}%
+                      Best score: {lessonProgress.bestScore || 0}%
                     </span>
                   )}
                 </div>
 
-                <div
-                  style={{
-                    marginTop: "6px",
-                    marginBottom: "20px",
-                    padding: "18px",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "18px",
-                    background: "#f8fafc",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 800 }}>
-                      Signs in this lesson
-                    </h4>
-                    <span className="badge">{lesson.signs?.length || 0} total</span>
+                <div className="signs-preview">
+                  <div className="signs-preview-header">
+                    <h4 className="signs-preview-title">Signs preview</h4>
+                    <span className="signs-preview-count">
+                      {lesson.signs?.length || 0} total
+                    </span>
                   </div>
 
                   {signPreview.length === 0 ? (
@@ -264,86 +254,22 @@ const Lessons = () => {
                       No sign content added yet.
                     </div>
                   ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                        gap: "16px",
-                      }}
-                    >
+                    <div className="signs-grid">
                       {signPreview.map((sign) => (
-                        <div
-                          key={sign.id}
-                          style={{
-                            background: "#fff",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: "16px",
-                            padding: "14px",
-                            minHeight: "100%",
-                          }}
-                        >
+                        <div key={sign.id} className="sign-card">
                           {sign.imageUrl ? (
                             <img
                               src={sign.imageUrl}
                               alt={sign.word}
-                              style={{
-                                width: "100%",
-                                height: "190px",
-                                objectFit: "cover",
-                                borderRadius: "12px",
-                                marginBottom: "12px",
-                              }}
+                              className="sign-image"
                             />
                           ) : (
-                            <div
-                              style={{
-                                width: "100%",
-                                height: "190px",
-                                borderRadius: "12px",
-                                background: "#e2e8f0",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#64748b",
-                                marginBottom: "12px",
-                              }}
-                            >
-                              No image
-                            </div>
+                            <div className="sign-image-placeholder">No image</div>
                           )}
 
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              gap: "10px",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            <strong style={{ fontSize: "1rem" }}>{sign.word}</strong>
-                            {sign.order != null && (
-                              <span className="badge">#{sign.order}</span>
-                            )}
-                          </div>
-
-                          <div
-                            style={{
-                              color: "#0f172a",
-                              fontWeight: 600,
-                              marginBottom: "6px",
-                            }}
-                          >
-                            {sign.meaningUz}
-                          </div>
-
-                          <div
-                            style={{
-                              color: "#64748b",
-                              fontSize: "0.92rem",
-                              lineHeight: 1.5,
-                            }}
-                          >
+                          <strong className="sign-word">{sign.word}</strong>
+                          <div className="sign-meaning">{sign.meaningUz}</div>
+                          <div className="sign-description">
                             {sign.description || "No description provided."}
                           </div>
                         </div>
@@ -352,58 +278,16 @@ const Lessons = () => {
                   )}
                 </div>
 
-                <div
-                  style={{
-                    padding: "18px",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "18px",
-                    background: "#fff",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      marginBottom: "10px",
-                    }}
-                  >
-                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 800 }}>
-                      Practice questions
-                    </h4>
-                    <span className="badge">{questionCount} available</span>
+                <div className="lesson-footer">
+                  <div className="lesson-footer-message">
+                    {lessonProgress?.completed
+                      ? "Lesson completed. Quiz is unlocked."
+                      : hasQuiz
+                      ? "Complete the lesson first to unlock its quiz."
+                      : "Open the lesson to start learning."}
                   </div>
 
-                  <div style={{ color: "#64748b", lineHeight: 1.6 }}>
-                    {questionCount > 0
-                      ? "This lesson includes structured quiz and practice activities to help you check recognition and understanding."
-                      : "No practice questions have been added to this lesson yet."}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: "18px",
-                    paddingTop: "16px",
-                    borderTop: "1px solid #e2e8f0",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ color: "#64748b", fontSize: "0.95rem" }}>
-                    {lessonProgress
-                      ? lessonProgress.completed
-                        ? "You have completed this lesson."
-                        : "You started this lesson already."
-                      : "Not started yet."}
-                  </div>
-
-                  <Link to={`/lessons/${lesson.id}`} className="btn btn-primary">
+                  <Link to={`/lessons/${lesson.id}`} className="open-lesson-btn">
                     Open Lesson
                   </Link>
                 </div>

@@ -3,7 +3,7 @@ import mediapipe as mp
 from pathlib import Path
 
 DATASET_ROOT = Path("data/custom_asl_raw")
-CLASSES = ["P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+CLASSES = ["L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
 START_CLASS_INDEX = 0
 WINDOW_NAME = "Capture Custom Dataset"
 

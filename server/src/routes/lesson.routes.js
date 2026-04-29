@@ -1,12 +1,17 @@
 const express = require("express");
 const router = express.Router();
 const lessonController = require("../controllers/lesson.controller");
-const { authenticateUser, authorizeAdmin } = require("../middlewares/auth.middleware");
+const { authenticateUser } = require("../middlewares/auth.middleware");
 
+// Public routes
 router.get("/", lessonController.getAllLessons);
+router.get("/category/:categoryId", lessonController.getLessonsByCategory);
 router.get("/:id", lessonController.getLessonById);
-router.post("/", authenticateUser, authorizeAdmin, lessonController.createLesson);
-router.put("/:id", authenticateUser, authorizeAdmin, lessonController.updateLesson);
-router.delete("/:id", authenticateUser, authorizeAdmin, lessonController.deleteLesson);
+
+// Admin only routes
+router.post("/", authenticateUser, lessonController.createLesson);
+router.put("/:id", authenticateUser, lessonController.updateLesson);
+router.delete("/:id", authenticateUser, lessonController.deleteLesson);
+router.patch("/:id/premium", authenticateUser, lessonController.toggleLessonPremium);
 
 module.exports = router;

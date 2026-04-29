@@ -7,7 +7,7 @@ const Navbar = () => {
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    navigate("/");
   };
 
   return (
@@ -19,30 +19,53 @@ const Navbar = () => {
         </Link>
 
         <nav className="nav-links">
-          <Link className="nav-link" to="/">Home</Link>
-          <Link className="nav-link" to="/categories">Categories</Link>
-          <Link className="nav-link" to="/lessons">Lessons</Link>
-        {token && role !== "admin" && (
-          <Link className="nav-link" to="/dashboard">My Dashboard</Link>
-        )}
-
-          {role === "admin" && (
-            <>
-              <Link className="nav-link" to="/admin">Admin</Link>
-              <Link className="nav-link" to="/admin/categories">Manage Categories</Link>
-              <Link className="nav-link" to="/admin/lessons">Manage Lessons</Link>
-            </>
-          )}
+          <Link className="nav-link" to="/">
+            Home
+          </Link>
 
           {!token ? (
             <>
-              <Link className="nav-link" to="/login">Login</Link>
-              <Link className="btn btn-primary" to="/register">Get Started</Link>
+              <Link className="nav-link" to="/auth">
+                Login
+              </Link>
+              <Link className="btn btn-primary" to="/auth">
+                Start learning now
+              </Link>
             </>
           ) : (
-            <button className="btn btn-primary" onClick={handleLogout}>
-              Logout
-            </button>
+            <>
+              {role !== "admin" && (
+                <>
+                  <Link className="nav-link" to="/lessons">
+                    Lessons
+                  </Link>
+                  <Link className="nav-link" to="/categories">
+                    Categories
+                  </Link>
+                  <Link className="nav-link" to="/dashboard">
+                    My Dashboard
+                  </Link>
+                </>
+              )}
+
+              {role === "admin" && (
+                <>
+                  <Link className="nav-link" to="/admin">
+                    Admin
+                  </Link>
+                  <Link className="nav-link" to="/admin/categories">
+                    Manage Categories
+                  </Link>
+                  <Link className="nav-link" to="/admin/lessons">
+                    Manage Lessons
+                  </Link>
+                </>
+              )}
+
+              <button className="btn btn-primary" onClick={handleLogout}>
+                Logout
+              </button>
+            </>
           )}
         </nav>
       </div>

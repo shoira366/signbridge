@@ -130,6 +130,53 @@ const CameraSignPredictor = ({
     }
   };
 
+  // const captureAndPredict = async () => {
+  //   if (!videoRef.current || !!isCameraOn) return;
+    
+  //   setIsDetecting(true);
+    
+  //   try {
+  //     const canvas = document.createElement("canvas");
+  //     canvas.width = videoRef.current.videoWidth || 640;
+  //     canvas.height = videoRef.current.videoHeight || 480;
+  //     const ctx = canvas.getContext("2d");
+  //     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      
+  //     // Send as data URL (already correct format)
+  //     const image = canvas.toDataURL("image/jpeg", 0.8);
+      
+  //     // Get or create session ID
+  //     let sessionId = localStorage.getItem("camera_session_id");
+  //     if (!sessionId) {
+  //       sessionId = Date.now().toString();
+  //       localStorage.setItem("camera_session_id", sessionId);
+  //     }
+      
+  //     const response = await fetch("http://localhost:8001/predict", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ 
+  //         image: image,
+  //         session_id: sessionId 
+  //       }),
+  //     });
+      
+  //     const data = await response.json();
+      
+  //     if (data.error) {
+  //       console.error("Prediction error:", data.error);
+  //       return;
+  //     }
+      
+  //     onPredictionResult(data);
+      
+  //   } catch (error) {
+  //     console.error("Prediction failed:", error);
+  //   } finally {
+  //     setIsDetecting(false);
+  //   }
+  // };
+
   useEffect(() => {
     if (!isCameraOn || disabled) return;
 

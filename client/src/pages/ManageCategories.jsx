@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
+import "../styles/Admin.css";
 
 const ManageCategories = () => {
   const { token } = useAuth();
@@ -111,83 +113,83 @@ const ManageCategories = () => {
   };
 
   return (
-    <div className="page-container">
-      <h1 className="page-title">Category Management</h1>
-      <p className="page-subtitle">
-        Organize the learning structure of SignBridge by creating and managing lesson categories.
-      </p>
+    <div className="admin-page">
+      {/* Back Button */}
+      <div className="admin-back-nav">
+        <Link to="/admin" className="admin-back-btn">
+          ← Back to Admin Dashboard
+        </Link>
+      </div>
 
-      <div className="grid grid-3" style={{ marginBottom: "24px" }}>
-        <div className="card">
-          <h3 className="section-title">Total Categories</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
-            {categories.length}
-          </p>
-        </div>
-
-        <div className="card">
-          <h3 className="section-title">Total Lessons</h3>
-          <p style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>
-            {totalLessons}
-          </p>
-        </div>
-
-        <div className="card">
-          <h3 className="section-title">Admin Tip</h3>
-          <p className="page-subtitle" style={{ marginBottom: 0 }}>
-            Keep categories broad and clear, such as Greetings, Alphabet, and Daily Words.
+      <div className="admin-header-section">
+        <div>
+          <h1 className="admin-page-title">📁 Category Management</h1>
+          <p className="admin-page-subtitle">
+            Organize the learning structure of SignBridge by creating and managing lesson categories.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-2">
-        <div className="card">
-          <h2 className="section-title">
-            {editingId ? "Edit Category" : "Create New Category"}
-          </h2>
+      <div className="admin-stats-grid">
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">📁</div>
+          <div className="admin-stat-info">
+            <h3>{categories.length}</h3>
+            <p>Total Categories</p>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">📚</div>
+          <div className="admin-stat-info">
+            <h3>{totalLessons}</h3>
+            <p>Total Lessons</p>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">💡</div>
+          <div className="admin-stat-info">
+            <p style={{ fontSize: "13px", margin: 0 }}>Keep categories broad and clear, such as Greetings, Alphabet, and Daily Words.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-two-columns">
+        {/* Create/Edit Form */}
+        <div className="admin-card">
+          <h3 className="admin-card-title">
+            {editingId ? "✏️ Edit Category" : "➕ Create New Category"}
+          </h3>
 
           <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label">Category Name</label>
+            <div className="admin-form-group">
+              <label className="admin-label">Category Name *</label>
               <input
-                className="input"
                 type="text"
-                placeholder="e.g. Numbers"
+                className="admin-input"
+                placeholder="e.g., Numbers, Greetings, Alphabet"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Description</label>
+            <div className="admin-form-group">
+              <label className="admin-label">Description</label>
               <textarea
-                className="textarea"
-                rows="5"
-                placeholder="Write a short category description"
+                className="admin-textarea"
+                rows="4"
+                placeholder="Write a short category description..."
                 value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
             </div>
 
-            <div className="actions-row">
-              <button className="btn btn-primary" type="submit" disabled={loading}>
-                {loading
-                  ? editingId
-                    ? "Updating..."
-                    : "Creating..."
-                  : editingId
-                  ? "Update Category"
-                  : "Create Category"}
+            <div className="admin-form-actions">
+              <button type="submit" className="admin-btn-primary" disabled={loading}>
+                {loading ? "Saving..." : (editingId ? "Update Category" : "Create Category")}
               </button>
-
               {editingId && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={resetForm}
-                >
+                <button type="button" className="admin-btn-secondary" onClick={resetForm}>
                   Cancel
                 </button>
               )}
@@ -195,76 +197,29 @@ const ManageCategories = () => {
           </form>
         </div>
 
-        <div className="card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "14px",
-              gap: "12px",
-              flexWrap: "wrap",
-            }}
-          >
-            <h2 className="section-title" style={{ margin: 0 }}>
-              Existing Categories
-            </h2>
-            <span className="badge">{categories.length} items</span>
+        {/* Categories List */}
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>Existing Categories</h3>
+            <span className="admin-badge">{categories.length} items</span>
           </div>
 
           {categories.length === 0 ? (
-            <div className="empty-state">No categories available.</div>
+            <div className="admin-empty">No categories available.</div>
           ) : (
-            <div style={{ display: "grid", gap: "14px" }}>
+            <div className="admin-categories-list">
               {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "16px",
-                    padding: "16px",
-                    background: "#f8fafc",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div>
-                      <h3 style={{ margin: "0 0 8px" }}>{cat.name}</h3>
-                      <p
-                        style={{
-                          margin: 0,
-                          color: "#64748b",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        {cat.description || "No description provided."}
-                      </p>
+                <div key={cat.id} className="admin-category-item">
+                  <div className="admin-category-info">
+                    <h4>{cat.name}</h4>
+                    <p>{cat.description || "No description provided."}</p>
+                    <div className="admin-category-meta">
+                      <span className="admin-badge">📚 {cat.lessons?.length || 0} lessons</span>
                     </div>
                   </div>
-
-                  <div className="actions-row" style={{ marginTop: "14px" }}>
-                    <span className="meta-pill">
-                      Lessons: {cat.lessons?.length || 0}
-                    </span>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => handleEdit(cat)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => handleDelete(cat.id, cat.name)}
-                    >
-                      Delete
-                    </button>
+                  <div className="admin-category-actions">
+                    <button className="admin-btn-icon edit" onClick={() => handleEdit(cat)} title="Edit">✏️</button>
+                    <button className="admin-btn-icon delete" onClick={() => handleDelete(cat.id, cat.name)} title="Delete">🗑️</button>
                   </div>
                 </div>
               ))}

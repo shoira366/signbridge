@@ -8,35 +8,191 @@ datasource db {
 }
 
 model User {
-  id           Int            @id @default(autoincrement())
+  id           Int    @id @default(autoincrement())
   fullName     String
-  email        String         @unique
+  email        String @unique
   passwordHash String
-  role         String         @default("user")
-  createdAt    DateTime       @default(now())
+  role         String @default("user")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
   progress     UserProgress[]
+  answers      UserAnswer[]
+  
+  // NEW: Gamification & Subscription
+  subscription        Subscription?
+  userStreak          UserStreak?
+  achievements        UserAchievement[]
+  notifications       Notification[]
+  recognitionAttempts RecognitionAttempt[]
+  
+  // NEW: Course enrollment
+  enrolledCourses     UserCourseEnrollment[]
+  
+  // NEW: Sign progress tracking
+  signProgress        UserSignProgress[]
+  
+  // NEW: Daily activity tracking
+  dailyActivities     DailyActivity[]
 }
+
+// ==================== SUBSCRIPTION & PREMIUM ====================
+
+model Subscription {
+  id                        Int            @id @default(autoincrement())
+  userId                    Int            @unique
+  plan                      SubscriptionPlan @default(FREE)
+  status                    SubscriptionStatus @default(ACTIVE)
+  startDate                 DateTime       @default(now())
+  endDate                   DateTime?
+  stripeSubscriptionId      String?
+  stripeSubscriptionItemId  String?
+  stripeCustomerId          String?
+  pendingPlan               String?
+  autoRenew                 Boolean        @default(false)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  user                      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum SubscriptionPlan {
+  FREE
+  MONTHLY
+  YEARLY
+  LIFETIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+}
+
+// ==================== GAMIFICATION & ACHIEVEMENTS ====================
+
+model Achievement {
+  id              Int            @id @default(autoincrement())
+  name            String
+  description     String?
+  badgeImage      String?
+  requiredPoints  Int            @default(0)
+  requiredLessons Int            @default(0)
+  requiredStreak  Int            @default(0)
+  requiredSigns   Int            @default(0)
+  category        AchievementCategory
+  createdAt       DateTime       @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+enum AchievementCategory {
+  LESSON_COMPLETION
+  QUIZ_MASTERY
+  STREAK_MASTER
+  SIGN_MASTER
+  EARLY_BIRD
+  DEDICATED_LEARNER
+}
+
+model UserAchievement {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  achievementId Int
+  unlockedAt    DateTime    @default(now())
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+}
+
+model UserStreak {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  lastActiveDate  DateTime?
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  title       String
+  message     String
+  type        NotificationType
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationType {
+  ACHIEVEMENT
+  STREAK_REMINDER
+  SUBSCRIPTION
+  LESSON_UPDATE
+  QUIZ_RESULT
+}
+
+// ==================== EDUCATIONAL CONTENT (Extended) ====================
 
 model Category {
   id          Int      @id @default(autoincrement())
   name        String   @unique
   description String?
+  imageUrl    String?
+  order       Int      @default(0)
+  
   lessons     Lesson[]
+}
+
+model Course {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  level       CourseLevel @default(BEGINNER)
+  imageUrl    String?
+  isPremium   Boolean   @default(false)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  
+  lessons     Lesson[]
+  enrollments UserCourseEnrollment[]
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
 }
 
 model Lesson {
   id          Int      @id @default(autoincrement())
   categoryId  Int
+  courseId    Int?
   title       String
   description String?
   difficulty  String   @default("beginner")
   videoUrl    String?
+  imageUrl    String?
+  order       Int      @default(0)
+  isPremium   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  category Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  signs    Sign[]
-  quizzes  Quiz[]
-  progress UserProgress[]
+  category     Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  course       Course?        @relation(fields: [courseId], references: [id])
+  signs        Sign[]
+  quizzes      Quiz[]
+  progress     UserProgress[]
+  answers      UserAnswer[]
 }
 
 model Sign {
@@ -45,14 +201,17 @@ model Sign {
   word        String
   meaningUz   String
   description String?
-  imageUrl    String? // 🔥 NEW
+  imageUrl    String?
   order       Int?
-  videoUrl    String? // optional
+  videoUrl    String?
+  gifUrl      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
   lesson        Lesson         @relation(fields: [lessonId], references: [id])
   quizQuestions QuizQuestion[]
+  userProgress  UserSignProgress[]
+  recognitionAttempts RecognitionAttempt[] // Add this relation
 
   @@unique([lessonId, word])
 }
@@ -61,6 +220,8 @@ model Quiz {
   id        Int      @id @default(autoincrement())
   lessonId  Int
   title     String
+  timeLimit Int?
+  passingScore Int    @default(70)
   createdAt DateTime @default(now())
 
   lesson    Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
@@ -75,22 +236,127 @@ model QuizQuestion {
   signId        Int?
   correctAnswer String?
   optionsJson   Json?
+  points        Int      @default(1)
+  order         Int      @default(0)
+  isPremium     Boolean  @default(false)
   createdAt     DateTime @default(now())
+
+  answers       UserAnswer[]
 
   quiz Quiz  @relation(fields: [quizId], references: [id], onDelete: Cascade)
   sign Sign? @relation(fields: [signId], references: [id], onDelete: SetNull)
 }
 
-model UserProgress {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  lessonId  Int
-  completed Boolean  @default(false)
-  score     Int      @default(0)
-  updatedAt DateTime @default(now())
+// ==================== PROGRESS TRACKING (Extended) ====================
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+model UserProgress {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  lessonId      Int
+
+  completed     Boolean   @default(false)
+  completedAt   DateTime?
+
+  lastScore     Int       @default(0)
+  bestScore     Int       @default(0)
+
+  attempts      Int       @default(0)
+  lastQuizAt    DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson        Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   @@unique([userId, lessonId])
+}
+
+model UserSignProgress {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  signId      Int
+  mastered    Boolean  @default(false)
+  masteredAt  DateTime?
+  attempts    Int      @default(0)
+  successRate Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sign        Sign     @relation(fields: [signId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, signId])
+}
+
+model UserAnswer {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  lessonId       Int
+  quizId         Int?
+  questionId     Int
+  attempt        Int
+  selectedAnswer String?
+  isCorrect      Boolean
+  createdAt      DateTime @default(now())
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson         Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  question       QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId, attempt])
+  @@index([userId, lessonId])
+}
+
+model UserCourseEnrollment {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  courseId    Int
+  enrolledAt  DateTime @default(now())
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  progress    Float    @default(0)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+// ==================== AI RECOGNITION SYSTEM ====================
+
+model RecognitionAttempt {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  signId         Int?
+  predictedLabel String
+  confidence     Float
+  handDetected   Boolean
+  isCorrect      Boolean?
+  imageUrl       String?
+  sessionId      String?
+  createdAt      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sign           Sign?    @relation(fields: [signId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([signId])
+}
+
+// ==================== DAILY ACTIVITY TRACKING ====================
+
+model DailyActivity {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  activityDate DateTime @default(now())
+  lessonsCompleted Int  @default(0)
+  quizzesTaken Int     @default(0)
+  signsLearned Int     @default(0)
+  timeSpent   Int      @default(0)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityDate])
+  @@index([userId, activityDate])
 }
